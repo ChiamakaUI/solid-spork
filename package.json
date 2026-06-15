@@ -1,0 +1,33 @@
+{
+  "name": "slipstream",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Slipstream — ride the leader, land low-latency: a smart Solana transaction stack (Jito bundles, Yellowstone gRPC lifecycle tracking, Claude-powered autonomous retry agent)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/main.ts",
+    "run:campaign": "tsx src/main.ts --bundles 12 --inject-faults 2",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "@triton-one/yellowstone-grpc": "^5.0.9",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "jito-ts": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.22.4",
+    "typescript": "~5.9"
+  },
+  "overrides": {
+    "jito-ts": {
+      "@solana/web3.js": "$@solana/web3.js"
+    }
+  }
+}
