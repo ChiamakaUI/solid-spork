@@ -1,9 +1,7 @@
 /**
- * Shared domain types for the smart transaction stack.
- *
- * The lifecycle model mirrors the bounty's required stages exactly:
- * Submitted → Processed → Confirmed → Finalized, with slot numbers,
- * timestamps, and latency deltas captured at every transition.
+ * Shared domain types for the smart transaction stack. The lifecycle model
+ * follows the commitment stages Submitted → Processed → Confirmed → Finalized,
+ * capturing slot, timestamp, and inter-stage delta at each transition.
  */
 
 export type CommitmentStage = "submitted" | "processed" | "confirmed" | "finalized";
@@ -29,7 +27,7 @@ export interface TipDecision {
   lamports: number;
   /** Tip account the lamports were sent to. */
   tipAccount: string;
-  /** Inputs that produced this tip — proves nothing is hardcoded. */
+  /** The inputs that produced this tip — nothing is hardcoded. */
   basis: {
     landedTips25th: number;
     landedTips50th: number;
@@ -52,6 +50,8 @@ export interface BundleAttempt {
   tip: TipDecision;
   /** Leader window targeted for this submission. */
   targetLeaderSlot?: number;
+  /** Identity (base58) of the Jito leader whose window we targeted. */
+  targetLeaderIdentity?: string;
   stages: StageRecord[];
   failure?: {
     class: FailureClass;
@@ -69,15 +69,19 @@ export interface LifecycleEntry {
   createdAt: number;
   network: "mainnet-beta" | "testnet";
   attempts: BundleAttempt[];
-  /** Final outcome after retries. */
-  outcome: "finalized" | "confirmed" | "failed" | "aborted";
+  /**
+   * Final outcome after retries. `processed` means the tx executed in a block
+   * but its slot never reached confirmed within the timeout (typically a
+   * forked/skipped slot); it is reported as such, not promoted to `confirmed`.
+   */
+  outcome: "finalized" | "confirmed" | "processed" | "failed" | "aborted";
   /** Agent decisions that shaped this entry (by decision id). */
   agentDecisionIds: string[];
 }
 
 /**
- * A single decision made by the AI agent. Every field is persisted —
- * "reasoning is visible" is a judged criterion, so this is the artifact.
+ * A single decision made by the AI agent. Every field is persisted, including
+ * the model's verbatim reasoning, so each retry is fully auditable.
  */
 export interface AgentDecision {
   id: string;
@@ -115,11 +119,4 @@ export interface SlotUpdate {
   /** processed | confirmed | finalized as reported by the stream. */
   status: string;
   receivedAt: number;
-}
-
-export interface LeaderWindow {
-  leader: string;
-  startSlot: number;
-  endSlot: number;
-  jitoEnabled?: boolean;
 }

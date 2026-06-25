@@ -178,19 +178,6 @@ export class JitoClient {
     return this.grpc<string>(() => this.client.sendBundle(bundle));
   }
 
-  /**
-   * Subscribe to the block engine's bundle-result stream. Each event reports
-   * accepted / rejected (with reason) / processed / finalized / dropped for a
-   * bundleId — the only authoritative "why didn't it land" signal. Returns an
-   * unsubscribe function.
-   */
-  onBundleResult(
-    onResult: (r: any) => void,
-    onError: (e: Error) => void
-  ): () => void {
-    return this.client.onBundleResult(onResult, onError);
-  }
-
   /** HTTP JSON-RPC: status of bundles seen in the last ~5 minutes. */
   async inflightStatuses(bundleIds: string[]): Promise<InflightStatus[]> {
     await this.throttle();

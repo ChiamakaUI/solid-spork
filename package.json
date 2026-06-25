@@ -7,7 +7,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/main.ts",
+    "serve": "tsx src/serve.ts",
+    "smoke": "tsx src/smoke.ts",
     "run:campaign": "tsx src/main.ts --bundles 12 --inject-faults 2",
+    "report": "tsx src/report.ts",
+    "dashboard:data": "mkdir -p dashboard/public/data && cp logs/lifecycle.jsonl logs/agent-decisions.jsonl dashboard/public/data/ && echo 'synced real logs -> dashboard/public/data'",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -15,7 +19,7 @@
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
-    "@triton-one/yellowstone-grpc": "^5.0.9",
+    "@triton-one/yellowstone-grpc": "^4.0.2",
     "bs58": "^6.0.0",
     "dotenv": "^17.4.2",
     "jito-ts": "^4.2.1"

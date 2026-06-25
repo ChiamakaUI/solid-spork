@@ -3,11 +3,10 @@ import type { TipDecision } from "../types.js";
 
 /**
  * Dynamic tip engine. Every tip is computed from live Jito tip-floor data
- * (percentiles of recently LANDED tips) scaled by a congestion factor
- * derived from observed slot timing. The full basis is recorded on every
- * decision — auditable proof that nothing is hardcoded.
+ * (percentiles of recently LANDED tips) scaled by a congestion factor derived
+ * from observed slot timing; the full basis is recorded on each decision.
  *
- * Note: the tip-floor API reports values in SOL; we convert to lamports.
+ * The tip-floor API reports values in SOL; we convert to lamports.
  */
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -38,22 +37,31 @@ export class TipEngine {
   }
 
   async refresh(): Promise<TipFloorSnapshot> {
-    const res = await fetch(config.tipFloorUrl);
-    if (!res.ok) throw new Error(`tip_floor HTTP ${res.status}`);
-    const body = (await res.json()) as any[];
-    const row = body[0];
-    const sol = (v: number) => Math.round(v * LAMPORTS_PER_SOL);
-    this.snapshot = {
-      time: row.time,
-      p25: sol(row.landed_tips_25th_percentile),
-      p50: sol(row.landed_tips_50th_percentile),
-      p75: sol(row.landed_tips_75th_percentile),
-      p95: sol(row.landed_tips_95th_percentile),
-      p99: sol(row.landed_tips_99th_percentile),
-      ema50: sol(row.ema_landed_tips_50th_percentile),
-      fetchedAt: Date.now(),
-    };
-    return this.snapshot;
+    try {
+      const res = await fetch(config.tipFloorUrl);
+      if (!res.ok) throw new Error(`tip_floor HTTP ${res.status}`);
+      const body = (await res.json()) as any[];
+      const row = body[0];
+      const sol = (v: number) => Math.round(v * LAMPORTS_PER_SOL);
+      this.snapshot = {
+        time: row.time,
+        p25: sol(row.landed_tips_25th_percentile),
+        p50: sol(row.landed_tips_50th_percentile),
+        p75: sol(row.landed_tips_75th_percentile),
+        p95: sol(row.landed_tips_95th_percentile),
+        p99: sol(row.landed_tips_99th_percentile),
+        ema50: sol(row.ema_landed_tips_50th_percentile),
+        fetchedAt: Date.now(),
+      };
+      return this.snapshot;
+    } catch (err) {
+      // A transient tip-floor fetch failure (e.g. `TypeError: fetch failed`)
+      // must NEVER crash a live campaign mid-bundle. Reuse the last good
+      // snapshot if we have one; only surface the error on the very first
+      // fetch, when there is no floor to fall back to.
+      if (this.snapshot) return this.snapshot;
+      throw err;
+    }
   }
 
   /**

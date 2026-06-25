@@ -1,12 +1,10 @@
 import { Connection } from "@solana/web3.js";
 
 /**
- * Fault injection (bounty requirement: simulate at least one blockhash
- * expiry). The injection is honest — we fetch a real blockhash and then
- * HOLD the signed transaction until the chain itself expires it
- * (lastValidBlockHeight passes). Nothing is faked: the resulting failure
- * is a genuine expired-blockhash rejection that the agent must recover
- * from autonomously.
+ * Blockhash-expiry fault injection. Nothing is faked: we fetch a real
+ * blockhash, HOLD the signed transaction until the chain expires it, then
+ * submit anyway — producing a genuine expired-blockhash rejection for the
+ * agent to recover from.
  */
 export class FaultInjector {
   constructor(private connection: Connection) {}

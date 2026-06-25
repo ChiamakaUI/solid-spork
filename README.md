@@ -16,9 +16,16 @@ lifecycle log are explorer-verifiable.
 ```bash
 npm install
 cp .env.example .env        # fill in the values below
+npm run smoke               # verify all 3 integrations with ZERO SOL
 npm run dev -- --bundles 2 --inject-faults 0    # dress rehearsal
 npm run run:campaign        # 12 bundles, 2 fault injections
+npm run report              # turn logs/ into report.md (numbers + explorer links)
 ```
+
+`npm run report` reads `logs/lifecycle.jsonl` + `logs/agent-decisions.jsonl` and writes
+`logs/report.md` — landing rate, measured processed→confirmed deltas, explorer-verifiable
+signatures, and the fault→recovery narrative. It refuses to certify a run that used the MOCK
+agent, so every `TODO(campaign)` below is filled from a real, live-agent campaign.
 
 `.env`:
 
@@ -156,8 +163,8 @@ The fixes are architectural, not parametric, and all three ship in the stack:
 3. **Chain-based landing detection is the source of truth.** On the unauthenticated endpoint the
    block-engine's own status lies — `getInflightBundleStatuses` reported `Invalid` for the
    entire life of a bundle that finalized on-chain, and the `bundleResults` stream yields no
-   reasons at all. So landing is confirmed by the Yellowstone chain stream (the LifecycleTracker),
-   never by trusting `sendBundle`'s acceptance.
+   reasons at all. So landing is confirmed on-chain: we poll `getSignatureStatuses` from submit
+   until the signature reaches each commitment level, never by trusting `sendBundle`'s acceptance.
 
 <!-- TODO(campaign): cite the post-cooldown campaign's landing rate and 2-3 explorer links. -->
 

@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(174, 240, 58, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(154, 140, 255, 0.05), transparent 55%),
+    #070d08;
+  color: #cdd9e3;
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin terminal scrollbars */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #1c2832;
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer utilities {
+  .panel {
+    @apply bg-panel border border-line rounded-md;
+  }
+  .label {
+    @apply text-[10px] tracking-[0.18em] text-dim uppercase;
+  }
+  .scanline {
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+  .blink {
+    animation: blink 1.1s steps(2, start) infinite;
+  }
+  @keyframes blink {
+    to {
+      opacity: 0.25;
+    }
+  }
+  .pulse-dot {
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+  .flash {
+    animation: flash 0.9s ease-out;
+  }
+  @keyframes flash {
+    from {
+      background-color: rgba(174, 240, 58, 0.16);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+}

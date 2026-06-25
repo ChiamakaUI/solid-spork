@@ -1,10 +1,9 @@
 import type { FailureClass } from "../types.js";
 
 /**
- * Maps raw failure evidence (tx errors from the stream, inflight bundle
- * statuses, blockhash validity checks) onto the bounty's four failure
- * classes. Classification is deliberately dumb-and-deterministic — the
- * REASONING about what to do next belongs to the agent, not here.
+ * Maps raw failure evidence (tx errors, inflight bundle status, blockhash
+ * validity) onto a FailureClass. Deliberately dumb and deterministic — the
+ * reasoning about what to do next belongs to the agent, not here.
  */
 
 export interface FailureEvidence {
