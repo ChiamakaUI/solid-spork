@@ -43,10 +43,19 @@ export const config = {
   keypairPath: env("KEYPAIR_PATH", "./payer.keypair.json"),
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
-  agentModel: env("AGENT_MODEL", "claude-sonnet-4-6"),
+  // Haiku 4.5 ($1/$5 per MTok) is the default — 3× cheaper than Sonnet. The
+  // agent fires only on failures (a handful of calls/campaign), so cost is
+  // cents. NOTE: in live testing Haiku's tip escalation was inconsistent (some
+  // runs jumped to ~p99 and landed, one crept to 7% of cap and aborted early);
+  // if a campaign aborts too timidly, flip to claude-sonnet-4-6 via AGENT_MODEL
+  // for stricter adherence to the escalation policy in SYSTEM_PROMPT.
+  agentModel: env("AGENT_MODEL", "claude-haiku-4-5"),
 
   /** Where lifecycle + agent logs are written. */
   logDir: env("LOG_DIR", "./logs"),
+
+  /** Live dashboard port (SSE + UI). Open http://localhost:<port> during a run. */
+  dashboardPort: parseInt(env("DASHBOARD_PORT", "8088"), 10),
 
   network: "mainnet-beta" as const,
 
@@ -56,13 +65,31 @@ export const config = {
   /**
    * Hard ceiling on a single tip (lamports). A budget guardrail: the agent
    * may escalate toward this when bundles repeatedly fail to land, but never
-   * past it, so a runaway can't drain the payer. ~0.003 SOL.
+   * past it, so a runaway can't drain the payer. 4M ≈ 0.004 SOL — set above the
+   * measured auction p99 (~2.95M) so a competitive tip can actually WIN the
+   * auction; a 2-bundle diagnostic worst case is ~0.008 SOL.
    */
-  maxTipLamports: 3_000_000,
+  maxTipLamports: 4_000_000,
 
   /** Max attempts per logical transaction (agent can abort earlier). */
   maxAttempts: 6,
 
-  /** How long to wait for `processed` before treating the attempt as lost (ms). */
-  processedTimeoutMs: 90_000,
+  /** Refuse to start a campaign below this payer balance (SOL). */
+  minStartBalanceSol: 0.01,
+
+  /**
+   * Expected tip per LANDED bundle (lamports), used only to estimate a run's
+   * cost in the control-console preflight. On the unauthenticated public block
+   * engine, observed landings cost ~3.0–3.6M (well above published
+   * percentiles); failed attempts are free, so total run cost ≈ bundles × this.
+   */
+  typicalTipLamports: 3_200_000,
+
+  /**
+   * How long to wait for `processed` before treating the attempt as lost (ms).
+   * A Jito bundle lands within a couple slots of its targeted leader or not at
+   * all, so a short window detects non-landing fast (and keeps the blockhash
+   * fresh for the agent's next attempt). Env-overridable for quick campaigns.
+   */
+  processedTimeoutMs: parseInt(env("PROCESSED_TIMEOUT_MS", "90000"), 10),
 };
