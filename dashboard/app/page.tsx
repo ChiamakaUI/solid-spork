@@ -6,6 +6,7 @@ import { type OrchRow } from "@/lib/events";
 import { TopBar, type View } from "@/components/TopBar";
 import { DecisionsView } from "@/components/DecisionsView";
 import { LogsView } from "@/components/LogsView";
+import { ArchitectureView } from "@/components/ArchitectureView";
 import { SlotFeed } from "@/components/SlotFeed";
 import { LeaderSchedule } from "@/components/LeaderSchedule";
 import { NetworkHealth } from "@/components/NetworkHealth";
@@ -38,7 +39,11 @@ export default function Page() {
     <div className="h-screen flex flex-col scanline">
       <TopBar s={s} view={view} onView={setView} />
 
-      {view === "decisions" ? (
+      {view === "architecture" ? (
+        <main className="flex-1 min-h-0 overflow-hidden">
+          <ArchitectureView />
+        </main>
+      ) : view === "decisions" ? (
         <main className="flex-1 min-h-0 p-2 overflow-hidden">
           <DecisionsView s={s} now={now} />
         </main>

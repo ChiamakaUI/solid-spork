@@ -221,6 +221,68 @@ if (showcase) {
 const out = L.join("\n") + "\n";
 writeFileSync(join(dir, "report.md"), out);
 
+// ---- patch the README evidence blocks in place (idempotent) ----------------
+// Each `<!-- AUTO:key -->…<!-- /AUTO:key -->` region in the README is rewritten
+// from the real log, so a judged campaign finalises the README automatically —
+// no manual paste, no stale numbers. Run `npm run report` after the campaign.
+function mdLink(sig: string): string {
+  return `[\`${sig.slice(0, 16)}…\`](${explorer(sig)})`;
+}
+
+function replaceRegion(text: string, key: string, content: string): { text: string; hit: boolean } {
+  const re = new RegExp(`(<!-- AUTO:${key} -->)[\\s\\S]*?(<!-- /AUTO:${key} -->)`);
+  if (!re.test(text)) return { text, hit: false };
+  return { text: text.replace(re, `$1\n${content}\n$2`), hit: true };
+}
+
+const q1Block = deltas.length
+  ? `Across **${deltas.length}** landed bundles in the latest campaign we measured processed→confirmed of ` +
+    `**${fmtMs(Math.min(...deltas))}–${fmtMs(Math.max(...deltas))}** (median **${fmtMs(median(deltas))}**), consistent with ` +
+    `${median(deltas) < 1000 ? "low-congestion conditions — stake-weighted votes landing within 1–2 slots" : "elevated congestion — vote transactions competing for blockspace"}. ` +
+    `Per-bundle deltas are in \`logs/lifecycle.jsonl\`.`
+  : `_Run \`npm run report\` after a campaign to populate measured processed→confirmed deltas._`;
+
+const bundleFailures = entries.filter((e) => e.attempts.some((a) => a.failure?.class === "bundle_failure"));
+const q3Block = bundleFailures.length
+  ? `Observed in the latest campaign: entry \`${bundleFailures[0].id.slice(0, 8)}\` hit \`bundle_failure\` ` +
+    `(block-engine \`Invalid\` + on-chain absence) and recovered to \`${bundleFailures[0].outcome}\` after ` +
+    `${bundleFailures[0].attempts.length} attempt(s) — the classifier treated block-engine status as primary ` +
+    `evidence and handed the agent the leader-schedule context to drive the next attempt.`
+  : `_No leader-skip occurred in the latest campaign; the handling above is exercised by the classifier's \`bundle_failure\` path when a bundle fades to \`Invalid\`._`;
+
+const linkRows = landedRows.slice(0, 3);
+const landingBlock = linkRows.length
+  ? `**Latest campaign:** landed **${landed.length}/${entries.length} (${landRate}%)** with the live ` +
+    `\`${decisions[0]?.model ?? "claude"}\` agent. Example explorer-verifiable landings: ` +
+    linkRows.map((r) => mdLink(r.sig)).join(", ") + `.`
+  : `_Run \`npm run report\` after a campaign to populate the landing rate and explorer links._`;
+
+const explorerBlock = linkRows.length
+  ? `Example landed signatures from the latest campaign — check the slot + signature on any explorer:\n` +
+    linkRows.map((r) => `- slot ${r.slot ?? "?"} — ${mdLink(r.sig)}`).join("\n")
+  : `_Run \`npm run report\` after a campaign to populate explorer links._`;
+
+const readmePath = join(process.cwd(), "README.md");
+if (existsSync(readmePath)) {
+  let readme = readFileSync(readmePath, "utf8");
+  const patches: [string, string][] = [
+    ["q1-deltas", q1Block],
+    ["q3-skip", q3Block],
+    ["landing-summary", landingBlock],
+    ["explorer-links", explorerBlock],
+  ];
+  const missing: string[] = [];
+  for (const [key, content] of patches) {
+    const res = replaceRegion(readme, key, content);
+    readme = res.text;
+    if (!res.hit) missing.push(key);
+  }
+  writeFileSync(readmePath, readme);
+  if (missing.length)
+    console.log(`(README: no AUTO markers for ${missing.join(", ")} — left unchanged)`);
+  else console.log(`README evidence blocks patched from this run.`);
+}
+
 // ---- console summary ----
 console.log(`\n${"=".repeat(60)}`);
 console.log(`CAMPAIGN REPORT  (${liveCampaign ? "LIVE agent" : "MOCK — not submission-grade"})`);

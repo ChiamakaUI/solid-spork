@@ -253,7 +253,7 @@ async function runOne(opts: {
           pub("stage", { signature, stage, slot, at });
           say(`  lifecycle: ${signature.slice(0, 12)}… → ${stage} @ slot ${slot}`);
         },
-        { processedTimeoutMs: config.processedTimeoutMs, confirmTimeoutMs: 15_000, finalizeTimeoutMs: 20_000, intervalMs: 600 }
+        { processedTimeoutMs: config.processedTimeoutMs, confirmTimeoutMs: 15_000, finalizeTimeoutMs: 20_000, intervalMs: config.pollIntervalMs }
       );
     }
 

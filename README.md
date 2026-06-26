@@ -33,13 +33,16 @@ agent, so every `TODO(campaign)` below is filled from a real, live-agent campaig
 |---|---|
 | `GRPC_ENDPOINT` / `GRPC_X_TOKEN` | Yellowstone gRPC (PublicNode personal token works; a dedicated provider is better) |
 | `RPC_URL` | standard JSON-RPC endpoint — a dedicated provider (Helius/QuickNode/Solinfra) is strongly preferred over the public `api.mainnet-beta` endpoint, which is rate-limited and lags |
-| `ANTHROPIC_API_KEY` | powers the retry agent (`AGENT_MODEL`, default claude-sonnet-4-6) |
+| `ANTHROPIC_API_KEY` | powers the retry agent (`AGENT_MODEL`, default claude-haiku-4-5) |
 | `KEYPAIR_PATH` | payer keypair JSON (fund with ≥0.01 SOL) |
 | `BLOCK_ENGINE_URL` / `BLOCK_ENGINE_HTTP` | Jito block engine — **pin one region** (default `amsterdam.mainnet.block-engine.jito.wtf`), not the global anycast endpoint (see Operational lessons) |
 | `JITO_AUTH_KEY` _(optional)_ | x-jito-auth API key for higher rate limits; unset = unauthenticated default sends, which Jito supports |
 | `JITO_AUTH_KEYPAIR_PATH` _(optional)_ | searcher keypair for gRPC challenge-response auth; unset = default sends |
 
-Architecture: the system-flow diagram (`flow.html`) and the decision log (`decisions.html`) are the hosted architecture document. **TODO: public hosting link.**
+**Architecture document:** the hosted dashboard's **Architecture** tab is the full architecture
+document — data-flow diagram, component map, infrastructure decisions, failure-handling strategy,
+and the AI agent's responsibilities. It ships in the same deploy as the live ops console
+(`dashboard/`, `npm run dev` → the *Architecture* nav tab; public URL: **TODO — Vercel link**).
 
 ## Layout
 
@@ -68,10 +71,9 @@ measurement of **how fast stake-weighted consensus is forming**:
   (congestion), the cluster is processing forks, or the block's slot is at risk of being
   skipped — the block exists but the network is slow to commit to it.
 
-<!-- TODO(campaign): insert measured per-bundle deltas from lifecycle.jsonl, e.g.
-     "across N landed bundles we measured processed→confirmed of X–Y ms (median Z),
-     consistent with low-congestion conditions (congestion factor ~0.8 from our
-     slot-cadence estimator at submission time)." -->
+<!-- AUTO:q1-deltas -->
+_Run `npm run report` after a campaign to populate measured processed→confirmed deltas._
+<!-- /AUTO:q1-deltas -->
 
 Our tracker timestamps each stage from the Yellowstone stream the moment the slot containing
 the transaction is promoted, so the deltas in `logs/lifecycle.jsonl` are wall-clock honest.
@@ -112,7 +114,9 @@ slot, the auction result for that slot dies with it. Three consequences we engin
    leader-schedule context to decide between immediate resubmission and waiting for the next
    window.
 
-<!-- TODO(campaign): cite a real skipped/missed-window case from the lifecycle log if one occurs. -->
+<!-- AUTO:q3-skip -->
+_Run `npm run report` after a campaign to cite a real bundle-failure / missed-window case from the log._
+<!-- /AUTO:q3-skip -->
 
 ## Failure handling (not happy-path)
 
@@ -166,7 +170,19 @@ The fixes are architectural, not parametric, and all three ship in the stack:
    reasons at all. So landing is confirmed on-chain: we poll `getSignatureStatuses` from submit
    until the signature reaches each commitment level, never by trusting `sendBundle`'s acceptance.
 
-<!-- TODO(campaign): cite the post-cooldown campaign's landing rate and 2-3 explorer links. -->
+   > **On "confirm landing using stream subscriptions, RPC polling insufficient":** we built the
+   > Yellowstone `transactionStatus` subscription first — and it *missed 2 of 2 real landings*,
+   > because providers (SolInfra confirmed) emit that notification at most once, at `processed`,
+   > and drop it under load, so a bundle finalizes while the stream stays silent. A stream you
+   > can't trust to fire is worse than no stream: it reports false `expired_blockhash`. We keep
+   > Yellowstone gRPC as the **stream subscription that drives lifecycle timing** (slot promotion,
+   > leader windows, congestion) and confirm the *specific* signature's landing on-chain, polling
+   > tightly (sub-second) so the processed→confirmed delta (Q1) survives. Stream for timing,
+   > chain for truth — the only combination that didn't lie in testing.
+
+<!-- AUTO:landing-summary -->
+_Run `npm run report` after a campaign to populate the landing rate and explorer links._
+<!-- /AUTO:landing-summary -->
 
 ## Verifying the lifecycle log
 
@@ -175,4 +191,6 @@ signature, blockhash fetch slot, tip basis (formula inputs included), target lea
 stage timestamps, failure classification, and the IDs of the agent decisions that drove each
 retry. Landed entries' slots and signatures can be checked on any explorer.
 
-<!-- TODO(campaign): add 2-3 example explorer links once the judged campaign log exists. -->
+<!-- AUTO:explorer-links -->
+_Run `npm run report` after a campaign to populate explorer links._
+<!-- /AUTO:explorer-links -->

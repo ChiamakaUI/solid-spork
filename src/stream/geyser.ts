@@ -36,6 +36,7 @@ export class GeyserStream extends EventEmitter {
   private draining = false;
   private stopped = false;
   private reconnectAttempt = 0;
+  private reconnectTimer: NodeJS.Timeout | null = null;
   private pingTimer: NodeJS.Timeout | null = null;
   private pingId = 0;
   public dropped = 0;
@@ -69,6 +70,10 @@ export class GeyserStream extends EventEmitter {
   async stop() {
     this.stopped = true;
     if (this.pingTimer) clearInterval(this.pingTimer);
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     try {
       this.stream?.end();
     } catch {
@@ -102,8 +107,12 @@ export class GeyserStream extends EventEmitter {
 
       this.stream.on("data", (update: any) => this.enqueue(update));
 
+      const dead = this.stream;
       const onDisconnect = (why: string) => (err?: unknown) => {
         if (this.stopped) return;
+        // grpc-js fires error+close (often end too) for one broken stream;
+        // detach all three so a single death schedules exactly one reconnect.
+        dead.removeAllListeners();
         this.emit("disconnect", { why, err });
         this.scheduleReconnect();
       };
@@ -123,11 +132,16 @@ export class GeyserStream extends EventEmitter {
 
   private scheduleReconnect() {
     if (this.stopped) return;
+    // Single-flight: if a reconnect is already pending, don't stack another.
+    if (this.reconnectTimer) return;
     if (this.pingTimer) clearInterval(this.pingTimer);
     const backoff = Math.min(30_000, 500 * 2 ** this.reconnectAttempt);
     const jitter = backoff * (0.5 + Math.random() * 0.5);
     this.reconnectAttempt++;
-    setTimeout(() => void this.connect(), jitter);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connect();
+    }, jitter);
   }
 
   private writeRequest(req: any): Promise<void> {

@@ -1,11 +1,12 @@
 import { type DashState } from "@/lib/store";
 import { compact, shortSig } from "@/lib/format";
 
-export type View = "dashboard" | "decisions" | "logs";
+export type View = "dashboard" | "decisions" | "logs" | "architecture";
 const NAV: { id: View; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "decisions", label: "Decisions" },
   { id: "logs", label: "Logs" },
+  { id: "architecture", label: "Architecture" },
 ];
 
 function congestionLabel(c: number): string {

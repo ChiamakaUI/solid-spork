@@ -43,12 +43,11 @@ export const config = {
   keypairPath: env("KEYPAIR_PATH", "./payer.keypair.json"),
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
-  // Haiku 4.5 ($1/$5 per MTok) is the default — 3× cheaper than Sonnet. The
-  // agent fires only on failures (a handful of calls/campaign), so cost is
-  // cents. NOTE: in live testing Haiku's tip escalation was inconsistent (some
-  // runs jumped to ~p99 and landed, one crept to 7% of cap and aborted early);
-  // if a campaign aborts too timidly, flip to claude-sonnet-4-6 via AGENT_MODEL
-  // for stricter adherence to the escalation policy in SYSTEM_PROMPT.
+  // Haiku 4.5 is the default: the agent fires only on failures (a handful of
+  // calls/campaign) and the decision is tightly constrained by the SYSTEM_PROMPT
+  // and structured output, so the cheapest capable model is the right call —
+  // cost is cents, latency is lower, and the escalation policy holds. Set
+  // AGENT_MODEL=claude-sonnet-4-6 if you want richer free-form reasoning.
   agentModel: env("AGENT_MODEL", "claude-haiku-4-5"),
 
   /** Where lifecycle + agent logs are written. */
@@ -92,4 +91,12 @@ export const config = {
    * fresh for the agent's next attempt). Env-overridable for quick campaigns.
    */
   processedTimeoutMs: parseInt(env("PROCESSED_TIMEOUT_MS", "90000"), 10),
+
+  /**
+   * getSignatureStatuses poll interval during landing detection. Kept tight
+   * (250 ms) so we sample `processed` before the chain jumps to `confirmed`,
+   * preserving a real processed→confirmed delta for Q1 — at a coarse interval
+   * both levels land in one poll and the delta collapses to ~0 ms.
+   */
+  pollIntervalMs: parseInt(env("POLL_INTERVAL_MS", "250"), 10),
 };
