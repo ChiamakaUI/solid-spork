@@ -134,7 +134,7 @@ export class DashboardServer {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
         "access-control-allow-methods": "GET, POST, OPTIONS",
-        "access-control-allow-headers": "content-type",
+        "access-control-allow-headers": "content-type, x-control-token",
       }).end();
       return;
     }
@@ -168,6 +168,16 @@ export class DashboardServer {
       return;
     }
     if (this.control && path === "/campaign/start" && method === "POST") {
+      // Fail closed: the SOL-spending route is disabled unless a token is set,
+      // and every request must present it (the read-only /preflight stays open).
+      if (!config.controlToken) {
+        this.sendJson(res, 503, { error: "control plane disabled: set CONTROL_TOKEN on the server to enable campaign launches" });
+        return;
+      }
+      if (req.headers["x-control-token"] !== config.controlToken) {
+        this.sendJson(res, 401, { error: "unauthorized: missing or invalid x-control-token" });
+        return;
+      }
       await this.handleStart(req, res);
       return;
     }

@@ -27,6 +27,8 @@ export const config = {
 
   /** Path to the payer keypair (JSON array of secret-key bytes). */
   keypairPath: env("KEYPAIR_PATH", "./payer.keypair.json"),
+  /** Payer keypair inline (JSON byte array) — used on hosts without a file, e.g. Railway. */
+  keypairJson: process.env.KEYPAIR_JSON || undefined,
 
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
   // Haiku 4.5 default (agent fires only on failures); set AGENT_MODEL=claude-sonnet-4-6 for richer reasoning.
@@ -35,8 +37,10 @@ export const config = {
   /** Where lifecycle + agent logs are written. */
   logDir: env("LOG_DIR", "./logs"),
 
-  /** Live dashboard port (SSE + UI). Open http://localhost:<port> during a run. */
-  dashboardPort: parseInt(env("DASHBOARD_PORT", "8088"), 10),
+  /** Live dashboard port (SSE + UI). Prefers PORT (Railway/most hosts), then DASHBOARD_PORT. */
+  dashboardPort: parseInt(process.env.DASHBOARD_PORT ?? process.env.PORT ?? "8088", 10),
+  /** Shared secret guarding the campaign-launch route. Required to expose the control plane. */
+  controlToken: process.env.CONTROL_TOKEN || undefined,
 
   network: "mainnet-beta" as const,
 
