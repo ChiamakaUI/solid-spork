@@ -12,11 +12,7 @@ import { readFileSync } from "node:fs";
 import bs58 from "bs58";
 import { config } from "../config.js";
 
-/**
- * Optional gRPC searcher auth keypair, loaded once. Unset = default
- * (unauthenticated) sends, which Jito officially supports for non-allowlisted
- * searchers. searcherClient(url, undefined) is exactly the unauthenticated path.
- */
+/** Optional gRPC searcher auth keypair, loaded once. */
 function loadAuthKeypair(): Keypair | undefined {
   if (!config.jitoAuthKeypairPath) return undefined;
   return Keypair.fromSecretKey(
@@ -24,17 +20,7 @@ function loadAuthKeypair(): Keypair | undefined {
   );
 }
 
-/**
- * Jito access is hybrid:
- *  - gRPC searcher client (jito-ts) for leader-schedule intelligence
- *    (getNextScheduledLeader, getConnectedLeaders) and bundle submission.
- *  - Plain HTTPS for getInflightBundleStatuses / getBundleStatuses, which
- *    aren't on the gRPC surface, and for the REST tip-floor feed.
- *
- * jito-ts v4 wraps results as { ok, value | error }; unwrap() normalizes
- * both wrapped and bare returns so an SDK minor bump doesn't break us.
- */
-
+/** Normalize jito-ts wrapped ({ ok, value | error }) and bare returns. */
 function unwrap<T>(res: unknown): T {
   if (res && typeof res === "object" && "ok" in (res as any)) {
     const r = res as { ok: boolean; value: T; error?: unknown };
@@ -68,16 +54,7 @@ export class JitoClient {
     return h;
   }
 
-  /**
-   * Jito enforces 1 request/second/IP across the block engine — and the
-   * budget is shared by leader lookups, tip-account fetches, sends, and
-   * status polls. Exceeding it doesn't just 429: repeat offenders get
-   * shadow-dropped (sendBundle accepts, bundle never enters the auction) —
-   * the silent failure mode that makes "tip too low" misdiagnoses. We gate at
-   * 1.5s (margin over the 1/s window, since the first slot is also charged)
-   * and treat lastRequestAt=0 as "now" so the very first call also waits.
-   * Every block-engine call must go through this gate.
-   */
+  /** Gate every block-engine call to Jito's 1 req/s/IP limit (1.5s margin). */
   private async throttle(): Promise<void> {
     if (this.lastRequestAt === 0) this.lastRequestAt = Date.now();
     const wait = this.lastRequestAt + 1_500 - Date.now();
@@ -90,11 +67,7 @@ export class JitoClient {
     return /rate limit|exhausted|back-off/i.test(m);
   }
 
-  /**
-   * Throttled gRPC call with rate-limit back-off. A single 429 must not crash a
-   * multi-bundle campaign: on a rate-limit error we wait past the 1s window
-   * (growing per attempt) and retry, so transient back-off is absorbed.
-   */
+  /** Throttled gRPC call with rate-limit back-off and retry. */
   private async grpc<T>(fn: () => Promise<unknown>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       await this.throttle();
@@ -132,10 +105,7 @@ export class JitoClient {
     };
   }
 
-  /**
-   * Build a bundle: [payload tx, tip tx], both on the same blockhash.
-   * Payload is a tiny self-transfer — enough to land, cheap to run 10+ times.
-   */
+  /** Build a bundle with a memo payload tx plus tip, on one blockhash. */
   buildBundle(opts: {
     payer: Keypair;
     blockhash: string;
@@ -145,9 +115,7 @@ export class JitoClient {
   }): { bundle: Bundle; signature: string } {
     const { payer, blockhash, tipLamports, tipAccount, memoTag } = opts;
 
-    // Memo payload makes every attempt on-chain-traceable (entryId:attempt)
-    // AND gives the tx substance beyond the tip — the block engine silently
-    // drops bundles whose only net effect is paying a tip account.
+    // Memo payload: on-chain-traceable, gives the tx substance beyond the tip.
     const memoIx = new TransactionInstruction({
       programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
       keys: [],
@@ -159,8 +127,7 @@ export class JitoClient {
       lamports: tipLamports,
     });
 
-    // Tip rides in the SAME tx as the payload: a partially-landed bundle
-    // can never pay a tip for work that didn't execute.
+    // Tip rides in the same tx as the payload.
     const msg = new TransactionMessage({
       payerKey: payer.publicKey,
       recentBlockhash: blockhash,

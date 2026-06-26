@@ -3,12 +3,7 @@ import { join } from "node:path";
 import { config } from "../config.js";
 import type { AgentDecision, LifecycleEntry } from "../types.js";
 
-/**
- * Append-only JSONL stores:
- *  - lifecycle.jsonl — one line per logical transaction (all attempts, stages,
- *    slots, tips, failure classes); slots are explorer-verifiable.
- *  - agent-decisions.jsonl — one line per agent decision, reasoning verbatim.
- */
+/** Append-only JSONL stores for lifecycle entries, agent decisions, and events. */
 export class LogStore {
   constructor(private dir = config.logDir) {
     mkdirSync(dir, { recursive: true });

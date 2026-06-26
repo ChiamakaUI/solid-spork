@@ -1,10 +1,6 @@
 import type { FailureClass } from "../types.js";
 
-/**
- * Maps raw failure evidence (tx errors, inflight bundle status, blockhash
- * validity) onto a FailureClass. Deliberately dumb and deterministic — the
- * reasoning about what to do next belongs to the agent, not here.
- */
+/** Maps raw failure evidence onto a FailureClass, deterministically. */
 
 export interface FailureEvidence {
   /** Error object from a stream tx update, if any. */
@@ -20,7 +16,9 @@ export interface FailureEvidence {
 export function classifyFailure(e: FailureEvidence): { cls: FailureClass; detail: string } {
   const errStr = e.txErr ? JSON.stringify(e.txErr) : "";
 
-  if (/BlockhashNotFound/i.test(errStr)) {
+  // Expired/unknown blockhash, in all its shapes. Must run FIRST — the Jito send-path
+  // string isn't BlockhashNotFound and otherwise falls through to bundle_failure.
+  if (/BlockhashNotFound|expired\s+blockhash|blockhash[^"]*\bexpired|BlockheightExceeded|TransactionExpired/i.test(errStr)) {
     return { cls: "expired_blockhash", detail: `tx error: ${errStr}` };
   }
   if (/(ComputationalBudgetExceeded|ProgramFailedToComplete|exceeded.*compute|WouldExceedMaxBlockCostLimit)/i.test(errStr)) {
@@ -29,10 +27,8 @@ export function classifyFailure(e: FailureEvidence): { cls: FailureClass; detail
   if (/(InsufficientFundsForFee|fee)/i.test(errStr)) {
     return { cls: "fee_too_low", detail: `tx error: ${errStr}` };
   }
-  // Check the block engine's verdict BEFORE the blockhash heuristic: detection
-  // runs after the processed-timeout, by which point the blockhash has usually
-  // expired naturally — that expiry is a symptom, not the cause. "Invalid"
-  // within the 5-minute lookback means the bundle never entered the auction.
+  // Check the block engine's verdict before the blockhash heuristic; "Invalid" means
+  // the bundle never entered the auction.
   if (e.inflightStatus === "Failed" || e.inflightStatus === "Invalid") {
     return {
       cls: "bundle_failure",

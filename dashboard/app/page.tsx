@@ -52,12 +52,13 @@ export default function Page() {
           <LogsView s={s} now={now} />
         </main>
       ) : (
-      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[220px_1fr_320px] gap-2 p-2 overflow-auto lg:overflow-hidden">
-        {/* LEFT */}
+      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[320px_1fr_220px] gap-2 p-2 overflow-auto lg:overflow-hidden">
+        {/* LEFT — control & agent (moved from the right to differentiate the layout) */}
         <div className="flex flex-col gap-2 min-h-0">
-          <SlotFeed s={s} className="flex-1 min-h-[160px]" />
-          <LeaderSchedule s={s} />
-          <NetworkHealth s={s} />
+          <ControlPanel s={s} />
+          <LandingProbability s={s} />
+          <AIDecisions s={s} now={now} className="flex-1 min-h-[180px]" />
+          <RecoveryPanel s={s} now={now} />
         </div>
 
         {/* CENTER */}
@@ -74,12 +75,11 @@ export default function Page() {
           </div>
         </div>
 
-        {/* RIGHT */}
+        {/* RIGHT — live network feed (moved from the left) */}
         <div className="flex flex-col gap-2 min-h-0">
-          <ControlPanel s={s} />
-          <LandingProbability s={s} />
-          <AIDecisions s={s} now={now} className="flex-1 min-h-[180px]" />
-          <RecoveryPanel s={s} now={now} />
+          <SlotFeed s={s} className="flex-1 min-h-[160px]" />
+          <LeaderSchedule s={s} />
+          <NetworkHealth s={s} />
         </div>
       </main>
       )}

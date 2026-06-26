@@ -1,7 +1,4 @@
-/**
- * Quick gRPC endpoint probe: connect, stream slots for ~12s, report.
- * Usage: tsx src/probe-grpc.ts <endpoint> [xToken]
- */
+/** Quick gRPC endpoint probe: connect, stream slots for ~12s, report. */
 import { GeyserStream } from "./stream/geyser.js";
 
 const endpoint = process.argv[2];

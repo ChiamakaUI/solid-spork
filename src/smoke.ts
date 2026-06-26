@@ -1,9 +1,4 @@
-/**
- * Smoke test: verifies all three external integrations with zero SOL.
- *   1. Yellowstone gRPC slot streaming (PublicNode free endpoint)
- *   2. Jito tip-floor REST + dynamic tip computation
- *   3. Jito block engine gRPC (tip accounts + next scheduled leader)
- */
+/** Smoke test: verifies geyser, tip engine, and Jito gRPC integrations with zero SOL. */
 import { GeyserStream } from "./stream/geyser.js";
 import { TipEngine } from "./tip/engine.js";
 import { JitoClient } from "./jito/client.js";

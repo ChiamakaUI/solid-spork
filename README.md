@@ -3,10 +3,13 @@
 **Ride the leader, land low-latency.**
 
 A smart Solana transaction stack built for the Superteam Nigeria Advanced Infrastructure Challenge:
-**Jito bundle submission** with a **dynamic tip engine** priced from live tip-floor data, full
-**lifecycle tracking** (submitted → processed → confirmed → finalized) over **Yellowstone gRPC**,
-deterministic **failure classification**, and a **Claude-powered autonomous retry agent** that owns
-every retry/abort decision — with its reasoning logged as structured JSON.
+**Jito bundle submission** with a **dynamic tip engine** that prices a baseline from live
+tip-floor data (the floor-finder), full **lifecycle tracking** (submitted → processed → confirmed
+→ finalized) over **Yellowstone gRPC**, deterministic **failure classification**, and a
+**Claude-powered autonomous retry agent** that owns every retry/abort decision — including tip
+*escalation*, the lever that actually wins the auction on the public endpoint — with its reasoning
+logged as structured JSON. The split matters: the engine finds a sane starting price; the agent,
+not the formula, decides how far above it to climb when a bundle won't land.
 
 Everything below comes from running this stack against **mainnet-beta**. Slot numbers in the
 lifecycle log are explorer-verifiable.
@@ -48,9 +51,9 @@ and the AI agent's responsibilities. It ships in the same deploy as the live ops
 
 ```
 src/
-  stream/     Yellowstone gRPC slot + transaction streaming, reconnect & backpressure
+  stream/     Yellowstone gRPC slot streaming (slots-only), reconnect & backpressure
   lifecycle/  commitment-stage tracker + deterministic failure classifier
-  tip/        dynamic tip engine: ema50 × congestion × urgency, clamped to [1000, maxTipLamports]
+  tip/        dynamic tip engine: ema50 × congestion, clamped to [1000, maxTipLamports]
   jito/       bundle construction, leader-window targeting, submission, status
   agent/      Claude retry agent: failure context in, decision JSON out
   fault/      fault injector (holds a signed tx until its blockhash expires on-chain)
@@ -75,8 +78,15 @@ measurement of **how fast stake-weighted consensus is forming**:
 _Run `npm run report` after a campaign to populate measured processed→confirmed deltas._
 <!-- /AUTO:q1-deltas -->
 
-Our tracker timestamps each stage from the Yellowstone stream the moment the slot containing
-the transaction is promoted, so the deltas in `logs/lifecycle.jsonl` are wall-clock honest.
+We timestamp each stage by polling `getSignatureStatuses` from submission (every
+`POLL_INTERVAL_MS`, default **250 ms**) and recording the wall-clock moment the signature first
+reaches each commitment. Two honest caveats follow from how that's measured: the delta is
+**quantized to the poll interval** and includes RPC propagation lag, so read it as a directional
+health signal — a **lower-bound proxy**, not an absolute consensus-latency readout. A large or
+*growing* processed→confirmed delta is the meaningful signal; a near-zero delta usually means the
+chain promoted both stages between two polls, not that consensus was instant. (The Yellowstone
+stream drives slot/leader/congestion timing — it does not timestamp the per-signature stages; see
+Operational lessons for why landing truth is read from the chain, not the stream.)
 
 ### Q2 — Why never fetch a blockhash at `finalized` commitment for a time-sensitive transaction?
 
@@ -180,6 +190,16 @@ The fixes are architectural, not parametric, and all three ship in the stack:
    > tightly (sub-second) so the processed→confirmed delta (Q1) survives. Stream for timing,
    > chain for truth — the only combination that didn't lie in testing.
 
+4. **The Yellowstone client version is load-bearing — pin `@triton-one/yellowstone-grpc@4.0.2`.**
+   On Node 24.15 / darwin-arm64 the v5 client's `subscribe()` either hangs indefinitely or throws
+   `failed to open subscribe stream` against an endpoint that `grpcurl` and raw `@grpc/grpc-js`
+   stream from without complaint — so it's the client, not the server. The cause: v4.1.0+ switched
+   the transport to a NAPI/Rust core, and that core is what wedges. v4.0.2 is the last release on
+   the pure `@grpc/grpc-js` transport. The downgrade also changes the API surface: there is no
+   `client.connect()` (grpc-js connects lazily), and channel options use grpc-js names
+   (`grpc.keepalive_time_ms`, `grpc.max_receive_message_length`, …) rather than the NAPI option
+   names. After pinning v4.0.2 the probe streams ~160 slots in 12 s, green every run.
+
 <!-- AUTO:landing-summary -->
 _Run `npm run report` after a campaign to populate the landing rate and explorer links._
 <!-- /AUTO:landing-summary -->
@@ -190,6 +210,13 @@ _Run `npm run report` after a campaign to populate the landing rate and explorer
 signature, blockhash fetch slot, tip basis (formula inputs included), target leader slot,
 stage timestamps, failure classification, and the IDs of the agent decisions that drove each
 retry. Landed entries' slots and signatures can be checked on any explorer.
+
+**Leader targeting is verified, not just claimed.** After a bundle lands we call
+`getSlotLeaders` on the landed slot and compare the actual block producer to the
+`targetLeaderIdentity` we captured at submit time (`landedSlotLeader` / `targetLeaderMatched`
+on each attempt). `npm run report` summarises how many landed bundles hit the exact targeted
+Jito leader's slot — and you can confirm it independently: open the slot on any explorer and
+check its producer against `targetLeaderIdentity` in the log.
 
 <!-- AUTO:explorer-links -->
 _Run `npm run report` after a campaign to populate explorer links._

@@ -3,22 +3,11 @@ import { EventEmitter } from "node:events";
 import { config } from "../config.js";
 import type { SlotUpdate } from "../types.js";
 
-// CJS/ESM interop: under tsx/Node ESM the class arrives on `.default`.
+// CJS/ESM interop: class arrives on `.default` under tsx/Node ESM.
 const Client = ((GrpcDefault as any).default ?? GrpcDefault) as typeof GrpcDefault;
 type GrpcClient = InstanceType<typeof GrpcDefault>;
 
-/**
- * Yellowstone gRPC slot stream. Drives the live slot feed, the congestion
- * estimate, and leader-window timing.
- *
- *  - Reconnects with exponential backoff + jitter, resubscribing from the last
- *    seen slot so gaps are replayed.
- *  - Sends an app-level ping every 10s and answers server pings, so an idle
- *    stream isn't culled by intermediaries.
- *  - Backpressure: updates land in a bounded queue drained by an async loop, so
- *    a slow consumer can't stall the socket; overflow is counted, not dropped
- *    silently.
- */
+/** Yellowstone gRPC slot stream with reconnect, keepalive ping, and backpressure. */
 
 interface QueueItem {
   payload: any;
@@ -46,10 +35,7 @@ export class GeyserStream extends EventEmitter {
     private xToken = config.grpcXToken
   ) {
     super();
-    // Pin the v4 client (pure @grpc/grpc-js) on purpose: the v5 NAPI/Rust
-    // engine's subscribe() hangs or fails to open a stream on Node 24 /
-    // darwin-arm64, while grpc-js streams fine. Raise the receive cap past the
-    // 4 MB default and keep the HTTP/2 link alive.
+    // Pin the v4 grpc-js client; raise receive cap and keep the HTTP/2 link alive.
     this.client = new Client(this.endpoint, this.xToken, {
       "grpc.max_receive_message_length": 64 * 1024 * 1024,
       "grpc.keepalive_time_ms": 30_000,
@@ -84,8 +70,7 @@ export class GeyserStream extends EventEmitter {
   private buildRequest() {
     return {
       accounts: {},
-      // filterByCommitment=false so we see every status transition, not just
-      // finalized slots.
+      // filterByCommitment=false so we see every status transition.
       slots: { all: { filterByCommitment: false } },
       transactions: {},
       transactionsStatus: {},
@@ -101,8 +86,7 @@ export class GeyserStream extends EventEmitter {
   private async connect() {
     if (this.stopped) return;
     try {
-      // grpc-js connects lazily; the v4 client has no connect() — subscribe()
-      // establishes the HTTP/2 stream directly.
+      // subscribe() establishes the HTTP/2 stream directly.
       this.stream = await this.client.subscribe();
 
       this.stream.on("data", (update: any) => this.enqueue(update));
@@ -110,8 +94,7 @@ export class GeyserStream extends EventEmitter {
       const dead = this.stream;
       const onDisconnect = (why: string) => (err?: unknown) => {
         if (this.stopped) return;
-        // grpc-js fires error+close (often end too) for one broken stream;
-        // detach all three so a single death schedules exactly one reconnect.
+        // Detach all listeners so one broken stream schedules exactly one reconnect.
         dead.removeAllListeners();
         this.emit("disconnect", { why, err });
         this.scheduleReconnect();
@@ -132,7 +115,7 @@ export class GeyserStream extends EventEmitter {
 
   private scheduleReconnect() {
     if (this.stopped) return;
-    // Single-flight: if a reconnect is already pending, don't stack another.
+    // Single-flight: don't stack a reconnect if one is already pending.
     if (this.reconnectTimer) return;
     if (this.pingTimer) clearInterval(this.pingTimer);
     const backoff = Math.min(30_000, 500 * 2 ** this.reconnectAttempt);
@@ -146,9 +129,7 @@ export class GeyserStream extends EventEmitter {
 
   private writeRequest(req: any): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Never write to a torn-down stream: a late server ping after stop()/end()
-      // would otherwise throw ERR_STREAM_WRITE_AFTER_END as an uncaught
-      // rejection and crash the process (killing the dashboard).
+      // Never write to a torn-down stream (avoids ERR_STREAM_WRITE_AFTER_END).
       if (this.stopped || !this.stream || (this.stream as any).writableEnded) return resolve();
       this.stream.write(req, (err: unknown) => (err ? reject(err) : resolve()));
     });
@@ -170,7 +151,7 @@ export class GeyserStream extends EventEmitter {
     if (this.stopped) return; // ignore late data after teardown
     const receivedAt = Date.now();
     if (update.ping) {
-      // Server ping: reply or the stream gets culled.
+      // Reply to server ping or the stream gets culled.
       void this.writeRequest({ ...this.buildRequest(), ping: { id: ++this.pingId } });
       return;
     }

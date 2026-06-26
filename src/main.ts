@@ -14,13 +14,7 @@ import { LogStore } from "./log/store.js";
 import { DashboardServer, type DashEventType } from "./dashboard/server.js";
 import type { AgentDecision, BundleAttempt, LifecycleEntry } from "./types.js";
 
-/**
- * Campaign orchestrator.
- *
- * Control-flow invariant: this file holds NO retry policy. When an attempt
- * fails it is classified and handed to the agent; the agent's decision
- * (retry-with-changes or abort) is executed verbatim.
- */
+/** Campaign orchestrator. */
 
 const log = new LogStore();
 const say = (msg: string) => {
@@ -31,8 +25,7 @@ const say = (msg: string) => {
 let dash: DashboardServer | undefined;
 const pub = (t: DashEventType, d: unknown) => dash?.publish(t, d);
 
-/** Route campaign events to a dashboard server. Both entrypoints (the CLI here
- *  and the persistent serve.ts) call this before starting a run. */
+/** Route campaign events to a dashboard server. */
 export function useDashboard(d: DashboardServer): void {
   dash = d;
 }
@@ -46,8 +39,7 @@ async function waitForLeaderWindow(
     try {
       info = await jito.nextScheduledLeader();
     } catch (err) {
-      // Transient block-engine errors (ECONNRESET, 503, etc.) must not discard
-      // a whole bundle — the leader lookup is pure read, so just retry it.
+      // transient block-engine errors: leader lookup is a pure read, just retry
       say(`  leader lookup failed (${String(err).slice(0, 80)}) — retrying in 1.5s`);
       await new Promise((r) => setTimeout(r, 1500));
       continue;
@@ -78,21 +70,7 @@ interface Landing {
 
 const STAGE_LADDER: readonly StageName[] = ["processed", "confirmed", "finalized"];
 
-/**
- * Authoritative landing detection: poll getSignatureStatuses from submit and
- * record the real wall-clock time each commitment level is first observed.
- *
- * Why poll instead of the gRPC tx-status stream: Yellowstone fires that update
- * at most once (at `processed`) and providers drop it (SolInfra missed 2/2 real
- * landings in testing), so a bundle can finalize while the stream stays silent.
- * Polling also preserves the processed→confirmed delta (Q1 evidence) and the
- * latency the dashboard charts, which a single post-timeout check would collapse
- * onto one timestamp.
- *
- * Phase 1 waits `processedTimeoutMs` for `processed` (absent ⇒ not landed);
- * phase 2 polls on for confirmed then finalized. `onStage` fires once per
- * newly-reached level.
- */
+/** Poll getSignatureStatuses from submit, recording when each commitment level first lands. */
 async function pollLanding(
   connection: Connection,
   signature: string,
@@ -119,8 +97,7 @@ async function pollLanding(
       if (st.err) return { landed: false, txErr: st.err, slot: st.slot };
       slot = st.slot ?? slot;
       const lvl = STAGE_LADDER.indexOf((st.confirmationStatus as StageName) ?? "processed") + 1;
-      // Emit every newly-reached level (the chain can jump processed→confirmed
-      // between polls; we still record each, at the time we observe it).
+      // emit every newly-reached level
       for (let l = best + 1; l <= lvl; l++) onStage(STAGE_LADDER[l - 1], slot, Date.now());
       if (lvl > best) {
         best = lvl;
@@ -240,8 +217,7 @@ async function runOne(opts: {
       submittedAt,
     });
 
-    // Poll the chain for the landing; record each stage (with a true
-    // deltaFromPrevMs) and stream it live to the dashboard.
+    // poll for landing; record each stage and stream it live
     let landing: Landing = { landed: false };
     if (!sendErr) {
       landing = await pollLanding(
@@ -260,6 +236,36 @@ async function runOne(opts: {
     if (landing.landed) {
       entry.outcome = landing.outcome!;
       say(`bundle ${opts.index} attempt ${attempt}: LANDED (${landing.outcome} @ slot ${landing.slot})`);
+
+      // post-landing leader verification: prove the bundle landed in the targeted window
+      if (landing.slot) {
+        try {
+          const [leader] = await connection.getSlotLeaders(landing.slot, 1);
+          const landedLeader = leader?.toBase58();
+          rec.landedSlot = landing.slot;
+          rec.landedSlotLeader = landedLeader;
+          rec.targetLeaderMatched =
+            !!landedLeader && landedLeader === targetLeader.identity;
+          say(
+            `  leader check: slot ${landing.slot} produced by ${landedLeader?.slice(0, 8)}… ` +
+              `(targeted ${targetLeader.identity.slice(0, 8)}… → ${rec.targetLeaderMatched ? "MATCH" : "different leader"})`
+          );
+          pub("leadercheck", {
+            entryId: entry.id,
+            index: opts.index,
+            signature,
+            landedSlot: landing.slot,
+            landedSlotLeader: landedLeader,
+            targetLeaderSlot,
+            targetLeaderIdentity: targetLeader.identity,
+            matched: rec.targetLeaderMatched,
+          });
+        } catch (err) {
+          // Leader lookup is best-effort evidence, never a landing blocker.
+          say(`  leader check unavailable: ${String(err).slice(0, 80)}`);
+        }
+      }
+
       log.lifecycle(entry);
       return entry;
     }
@@ -319,10 +325,7 @@ async function runOne(opts: {
     try {
       decision = await agent.decide(ctx);
     } catch (err) {
-      // The agent API is unavailable (e.g. no Anthropic credits, a 429, or a
-      // network blip). Do NOT crash the bundle or fabricate a decision — a
-      // judged campaign must never log invented reasoning. Record the failure
-      // and abort this entry cleanly so it shows up honestly in the log.
+      // agent API unavailable: record the failure and abort this entry cleanly
       say(`agent error: ${String(err)} — aborting this bundle (no autonomous decision possible)`);
       log.event("agent-error", { entryId: entry.id, attempt, err: String(err) });
       entry.outcome = "aborted";
@@ -361,12 +364,7 @@ async function runOne(opts: {
   return entry;
 }
 
-/**
- * Run one campaign end-to-end against an already-funded payer, publishing every
- * step to the attached dashboard. Caller owns the dashboard lifecycle and the
- * balance preflight; this starts the gRPC stream, runs the bundle loop, stops
- * the stream, and returns the landing tally. It never exits the process.
- */
+/** Run one campaign end-to-end against a funded payer, publishing each step to the dashboard. */
 export async function runCampaign(opts: {
   totalBundles: number;
   faultCount: number;
@@ -408,15 +406,12 @@ export async function runCampaign(opts: {
   // Let the slot stream warm up so congestion estimates mean something.
   await new Promise((r) => setTimeout(r, 5000));
 
-  // Fail fast on a dead Yellowstone endpoint. The gRPC slot stream drives the
-  // live slot feed, congestion estimate, and leader-window timing; without it
-  // the campaign is flying blind. A bad/missing GRPC token is the #1 setup
-  // failure, so we surface it loudly instead of producing a garbage campaign.
+  // fail fast on a dead Yellowstone endpoint
   if (stream.currentSlot === 0) {
     throw new Error(
       "Yellowstone gRPC produced no slot updates in 5s — check GRPC_ENDPOINT/GRPC_X_TOKEN. " +
         "The default public endpoint often rejects token-less subscriptions; use a dedicated " +
-        "provider (Helius / Triton / a PublicNode personal token)."
+        "provider (SolInfra / Helius / a PublicNode personal token)."
     );
   }
   say(`stream live at slot ${stream.currentSlot}`);
@@ -490,13 +485,11 @@ async function cliMain() {
 
   await runCampaign({ totalBundles, faultCount, payer, connection });
 
-  // Don't exit: the HTTP server keeps the process alive so the finished
-  // campaign stays viewable. All events are already buffered.
+  // don't exit: keep the HTTP server alive so the finished campaign stays viewable
   say(`dashboard still live at ${server.url} — Ctrl-C to exit (logs are saved either way)`);
 }
 
-// Run a campaign directly only when this file is the entrypoint. When serve.ts
-// imports runCampaign, this stays dormant (no campaign on import).
+// run directly only when this file is the entrypoint
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   cliMain().catch((err) => {
     console.error(err);

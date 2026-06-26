@@ -1,8 +1,4 @@
-/**
- * Shared domain types for the smart transaction stack. The lifecycle model
- * follows the commitment stages Submitted → Processed → Confirmed → Finalized,
- * capturing slot, timestamp, and inter-stage delta at each transition.
- */
+/** Shared domain types for the smart transaction stack. */
 
 export type CommitmentStage = "submitted" | "processed" | "confirmed" | "finalized";
 
@@ -52,6 +48,12 @@ export interface BundleAttempt {
   targetLeaderSlot?: number;
   /** Identity (base58) of the Jito leader whose window we targeted. */
   targetLeaderIdentity?: string;
+  /** Slot the bundle landed in (post-landing leader verification). */
+  landedSlot?: number;
+  /** Identity (base58) that actually produced `landedSlot`. */
+  landedSlotLeader?: string;
+  /** True iff `landedSlotLeader === targetLeaderIdentity`. */
+  targetLeaderMatched?: boolean;
   stages: StageRecord[];
   failure?: {
     class: FailureClass;
@@ -69,20 +71,13 @@ export interface LifecycleEntry {
   createdAt: number;
   network: "mainnet-beta" | "testnet";
   attempts: BundleAttempt[];
-  /**
-   * Final outcome after retries. `processed` means the tx executed in a block
-   * but its slot never reached confirmed within the timeout (typically a
-   * forked/skipped slot); it is reported as such, not promoted to `confirmed`.
-   */
+  /** Final outcome after retries. */
   outcome: "finalized" | "confirmed" | "processed" | "failed" | "aborted";
   /** Agent decisions that shaped this entry (by decision id). */
   agentDecisionIds: string[];
 }
 
-/**
- * A single decision made by the AI agent. Every field is persisted, including
- * the model's verbatim reasoning, so each retry is fully auditable.
- */
+/** A single decision made by the AI agent. */
 export interface AgentDecision {
   id: string;
   at: number;

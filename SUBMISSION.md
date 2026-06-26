@@ -25,9 +25,9 @@ responsibilities. Ships in the same deploy as the live console — one public UR
 | Sub-requirement | Where |
 |---|---|
 | Monitor live slot + leader data via Yellowstone gRPC | `src/stream/geyser.ts` (slots-only stream, single-flight reconnect + backoff) |
-| Detect correct leader window for submission | `src/jito/` `nextScheduledLeader` + `main.ts` leader-window targeting |
+| Detect correct leader window for submission | `src/jito/` `nextScheduledLeader` + `main.ts` leader-window targeting; **post-landing `getSlotLeaders` verification** confirms each landed bundle was produced by the targeted leader (see report's *Leader verification* line) |
 | Construct & submit Jito bundles | `src/jito/` (payload + tip in one tx) |
-| Dynamic tips from real tip-account data (no hardcoding) | `src/tip/` — `clamp(ema50 × congestion × urgency, 1000, maxTip)`, inputs logged per attempt |
+| Dynamic tips from real tip-account data (no hardcoding) | `src/tip/` — `clamp(ema50 × congestion, 1000, maxTip)` baseline; the agent owns escalation. Inputs logged per attempt |
 | Lifecycle: Submitted → Processed → Confirmed → Finalized | `src/lifecycle/` + `pollLanding()` in `main.ts` |
 | Timestamps, slot numbers, latency deltas | `logs/lifecycle.jsonl` (per-stage `observedAt`, `slot`, `deltaFromPrevMs`) |
 | Classify failures (expired blockhash, low fee, compute, bundle failure) | `src/lifecycle/` deterministic classifier |

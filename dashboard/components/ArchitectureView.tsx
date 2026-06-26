@@ -216,12 +216,12 @@ const MODULES: { dir: string; role: string; accent: string }[] = [
 
 const DECISIONS: { d: string; why: string }[] = [
   {
-    d: "Yellowstone gRPC for slot/leader truth, co-located in Amsterdam",
-    why: "Slot + leader-schedule streaming drives leader-window targeting and the congestion estimate. The gRPC provider sits in the same region as the Jito AMS block engine, minimising the observe→act latency that decides auction inclusion.",
+    d: "Yellowstone gRPC (SolInfra AMS) for slot/leader truth, co-located in Amsterdam",
+    why: "Slot + leader-schedule streaming drives leader-window targeting and the congestion estimate. Our gRPC provider is SolInfra (Amsterdam) — the same region as the Jito AMS block engine, minimising the observe→act latency that decides auction inclusion.",
   },
   {
-    d: "Pin @triton-one/yellowstone-grpc v4 (pure @grpc/grpc-js)",
-    why: "The v5 NAPI/Rust client's subscribe() hangs or fails to open a stream on Node 24 / darwin-arm64, while grpc-js streams cleanly. v4 is the last pure-JS line — chosen deliberately, not by accident.",
+    d: "Pin the gRPC client library @triton-one/yellowstone-grpc to v4 (pure @grpc/grpc-js)",
+    why: "This is the client library (Triton One's npm package), not the provider — our provider is SolInfra. The v5 NAPI/Rust client's subscribe() hangs or fails to open a stream on Node 24 / darwin-arm64, while grpc-js streams cleanly. v4 is the last pure-JS line — chosen deliberately, not by accident.",
   },
   {
     d: "On-chain landing detection is the source of truth (not block-engine status)",

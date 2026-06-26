@@ -3,28 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config.js";
 
-/**
- * Live data plane for the dashboard: Node's http + Server-Sent Events, no new
- * dependencies. The orchestrator calls publish() at every step; events fan out
- * to every connected browser over SSE.
- *
- * Two event classes drive the replay-on-connect behaviour:
- *   - PERSISTED (campaign/attempt/stage/failure/decision/outcome): buffered and
- *     re-sent on connect, so a late or reconnecting browser reconstructs the
- *     whole timeline.
- *   - LATEST-ONLY (slot/tipfloor/leader/health): high-frequency signals where
- *     only the most recent matters; we keep one of each, so the slot feed
- *     doesn't flood the buffer.
- *
- * The UI is the Next.js app under `dashboard/`; it subscribes to GET /events.
- * CORS is open so `next dev` (a different port) can connect.
- *
- * When a ControlPlane is supplied (the persistent serve.ts entrypoint), the
- * server also exposes a small command surface — GET /preflight and POST
- * /campaign/start — so the UI can check the payer balance and launch a run.
- * Without one (the CLI path, which is already running a campaign), those routes
- * 404, keeping that server, and the hosted replay build, strictly read-only.
- */
+/** Live dashboard data plane over Node http + Server-Sent Events. */
 
 export type DashEventType =
   | "campaign"
@@ -36,6 +15,7 @@ export type DashEventType =
   | "stage"
   | "failure"
   | "decision"
+  | "leadercheck"
   | "outcome"
   | "done"
   | "runstate"
@@ -60,10 +40,7 @@ export interface PreflightResult {
   affordableBundles: number;
 }
 
-/**
- * Command surface the server exposes when running as the persistent control
- * console. Implemented by serve.ts; the server just routes HTTP to it.
- */
+/** Command surface the server exposes when running as the control console. */
 export interface ControlPlane {
   preflight(): Promise<PreflightResult>;
   /** Begin a campaign if idle and funded; returns the HTTP status + JSON body to send. */
@@ -76,6 +53,7 @@ const PERSISTED = new Set<DashEventType>([
   "stage",
   "failure",
   "decision",
+  "leadercheck",
   "outcome",
   "done",
   "log",
@@ -96,7 +74,17 @@ export class DashboardServer {
   ) {}
 
   async start(): Promise<number> {
-    this.server = createServer((req, res) => void this.handle(req, res));
+    // A request handler must never crash the process: any route error (e.g. a
+    // transient RPC fetch in /preflight) becomes a 500, not a process exit.
+    this.server = createServer((req, res) => {
+      this.handle(req, res).catch((err) => {
+        console.error("request handler error:", String(err));
+        try {
+          if (!res.headersSent) res.writeHead(500, { "access-control-allow-origin": "*" });
+          res.end(JSON.stringify({ error: "internal error" }));
+        } catch { /* response already torn down */ }
+      });
+    });
     await new Promise<void>((resolve, reject) => {
       this.server!.once("error", reject);
       this.server!.listen(this.port, () => resolve());
@@ -141,8 +129,7 @@ export class DashboardServer {
     const method = req.method ?? "GET";
     const path = (req.url ?? "/").split("?")[0];
 
-    // The control routes are called cross-origin from the Next.js app, so they
-    // need CORS — including a preflight OPTIONS for the JSON POST.
+    // CORS preflight for cross-origin control routes.
     if (method === "OPTIONS") {
       res.writeHead(204, {
         "access-control-allow-origin": "*",
@@ -225,8 +212,7 @@ export class DashboardServer {
       "access-control-allow-origin": "*",
     });
     res.write(`retry: 2000\n\n`);
-    // Replay: latest-only snapshots first (current slot/leader/tipfloor), then
-    // the full persisted timeline, so a fresh browser reconstructs the run.
+    // Replay: latest-only snapshots first, then the full persisted timeline.
     for (const env of this.latest.values()) res.write(`data: ${JSON.stringify(env)}\n\n`);
     for (const env of this.buffer) res.write(`data: ${JSON.stringify(env)}\n\n`);
     this.clients.add(res);

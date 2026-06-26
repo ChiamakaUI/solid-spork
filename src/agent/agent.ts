@@ -2,18 +2,7 @@ import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
 import type { AgentDecision, FailureClass } from "../types.js";
 
-/**
- * The AI agent owns the retry decision. The orchestrator NEVER retries on
- * its own — when an attempt fails, the full failure context is handed
- * here, and whatever comes back (retry with specific changes, or abort)
- * is executed verbatim. Reasoning is persisted word-for-word.
- *
- * The agent decides via a Claude tool call with a strict schema, so the
- * decision is structured while the reasoning stays free-form. If no
- * ANTHROPIC_API_KEY is set the agent runs in MOCK mode (clearly labeled
- * in every record) so the stack stays runnable end-to-end in development.
- * Mock decisions must never appear in the submitted lifecycle log.
- */
+/** Owns the retry decision: given a failed attempt, returns retry-with-changes or abort. */
 
 export interface AgentContext {
   entryId: string;
@@ -160,7 +149,7 @@ export class RetryAgent {
   }
 }
 
-/** Deterministic stand-in for development only. Clearly labeled in records. */
+/** Deterministic stand-in for development only. */
 function mockDecision(ctx: AgentContext): Pick<AgentDecision, "reasoning" | "decision"> {
   if (ctx.attempt >= ctx.maxAttempts) {
     return {

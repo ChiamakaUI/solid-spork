@@ -3,17 +3,7 @@ import { join } from "node:path";
 import { config } from "./config.js";
 import type { AgentDecision, LifecycleEntry, StageRecord } from "./types.js";
 
-/**
- * Campaign reporter. Reduces the two append-only logs to logs/report.md:
- *
- *   logs/lifecycle.jsonl       → outcomes, processed→confirmed deltas, tips
- *   logs/agent-decisions.jsonl → autonomous retry reasoning
- *
- * Output is a paste-ready block that fills every `TODO(campaign)` in the README
- * with real numbers and explorer-verifiable signatures. Run after a campaign:
- * `npm run report`. Every figure derives from logged timestamps and on-chain
- * slots; if the log is empty, the report says so.
- */
+/** Campaign reporter: reduces the append-only logs to logs/report.md. */
 
 const dir = config.logDir;
 
@@ -55,8 +45,7 @@ if (!entries.length) {
   process.exit(1);
 }
 
-// Refuse to certify a run that was driven by the MOCK agent — those decisions
-// are dev-only and must never back a submission.
+// Refuse to certify a run driven by the MOCK agent.
 const mockDecisions = decisions.filter((d) => /MOCK/i.test(d.model));
 const liveCampaign = mockDecisions.length === 0;
 
@@ -76,6 +65,7 @@ type Landed = {
   confToFinal?: number;
   outcome: string;
   attempts: number;
+  leaderMatched?: boolean;
 };
 const landedRows: Landed[] = [];
 for (const e of entries) {
@@ -94,8 +84,12 @@ for (const e of entries) {
     confToFinal: fin?.deltaFromPrevMs,
     outcome: e.outcome,
     attempts: e.attempts.length,
+    leaderMatched: last.targetLeaderMatched,
   });
 }
+// Post-landing leader verification: landed bundles confirmed in the targeted Jito leader window.
+const leaderChecked = landedRows.filter((r) => r.leaderMatched !== undefined).length;
+const leaderVerified = landedRows.filter((r) => r.leaderMatched === true).length;
 const deltas = landedRows.map((r) => r.procToConf).filter((x): x is number => Number.isFinite(x as number));
 
 // ---- tips on landed bundles ----
@@ -167,16 +161,23 @@ L.push(``);
 L.push(`## Landed bundles (explorer-verifiable)`);
 L.push(``);
 if (landedRows.length) {
-  L.push(`| outcome | slot | tip (lamports) | proc→conf | conf→final | attempts | signature |`);
-  L.push(`|---|---|---|---|---|---|---|`);
+  L.push(`| outcome | slot | tip (lamports) | proc→conf | conf→final | attempts | leader | signature |`);
+  L.push(`|---|---|---|---|---|---|---|---|`);
   for (const r of landedRows) {
+    const leaderCell = r.leaderMatched === undefined ? "—" : r.leaderMatched ? "✅ match" : "↪ other";
     L.push(
-      `| ${r.outcome} | ${r.slot ?? "?"} | ${r.tip.toLocaleString()} | ${fmtMs(r.procToConf ?? NaN)} | ${fmtMs(r.confToFinal ?? NaN)} | ${r.attempts} | [\`${r.sig.slice(0, 16)}…\`](${explorer(r.sig)}) |`
+      `| ${r.outcome} | ${r.slot ?? "?"} | ${r.tip.toLocaleString()} | ${fmtMs(r.procToConf ?? NaN)} | ${fmtMs(r.confToFinal ?? NaN)} | ${r.attempts} | ${leaderCell} | [\`${r.sig.slice(0, 16)}…\`](${explorer(r.sig)}) |`
     );
   }
   if (landedTips.length)
     L.push(
       `\nLanded-tip range: **${Math.min(...landedTips).toLocaleString()}–${Math.max(...landedTips).toLocaleString()} lamports** (median ${median(landedTips).toLocaleString()}).`
+    );
+  if (leaderChecked)
+    L.push(
+      `\n**Leader verification:** **${leaderVerified}/${leaderChecked}** landed bundles were produced by the exact ` +
+        `Jito leader whose window we targeted (\`getSlotLeaders\` on the landed slot vs. the leader captured at submit). ` +
+        `The leader column above is explorer-checkable — open the slot and compare its producer to \`targetLeaderIdentity\` in \`logs/lifecycle.jsonl\`.`
     );
 } else {
   L.push(`_No landed bundles in this run._`);
@@ -222,9 +223,7 @@ const out = L.join("\n") + "\n";
 writeFileSync(join(dir, "report.md"), out);
 
 // ---- patch the README evidence blocks in place (idempotent) ----------------
-// Each `<!-- AUTO:key -->…<!-- /AUTO:key -->` region in the README is rewritten
-// from the real log, so a judged campaign finalises the README automatically —
-// no manual paste, no stale numbers. Run `npm run report` after the campaign.
+// Each `<!-- AUTO:key -->…<!-- /AUTO:key -->` region is rewritten from the real log.
 function mdLink(sig: string): string {
   return `[\`${sig.slice(0, 16)}…\`](${explorer(sig)})`;
 }
@@ -253,7 +252,9 @@ const q3Block = bundleFailures.length
 const linkRows = landedRows.slice(0, 3);
 const landingBlock = linkRows.length
   ? `**Latest campaign:** landed **${landed.length}/${entries.length} (${landRate}%)** with the live ` +
-    `\`${decisions[0]?.model ?? "claude"}\` agent. Example explorer-verifiable landings: ` +
+    `\`${decisions[0]?.model ?? "claude"}\` agent` +
+    (leaderChecked ? `; **${leaderVerified}/${leaderChecked}** landed in the exact targeted Jito leader's slot (post-landing \`getSlotLeaders\` verification)` : ``) +
+    `. Example explorer-verifiable landings: ` +
     linkRows.map((r) => mdLink(r.sig)).join(", ") + `.`
   : `_Run \`npm run report\` after a campaign to populate the landing rate and explorer links._`;
 
