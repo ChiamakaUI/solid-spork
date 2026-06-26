@@ -1,14 +1,12 @@
-import { Connection, Keypair } from "@solana/web3.js";
-import { readFileSync } from "node:fs";
+import { Connection } from "@solana/web3.js";
 import { config } from "./config.js";
+import { loadPayerKeypair } from "./keypair.js";
 import { DashboardServer, type ControlPlane, type PreflightResult } from "./dashboard/server.js";
 import { runCampaign, useDashboard } from "./main.js";
 
 /** Persistent control console: serves the live event stream and launches campaigns via HTTP. */
 
-const payer = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(readFileSync(config.keypairPath, "utf8")))
-);
+const payer = loadPayerKeypair();
 const connection = new Connection(config.rpcUrl, "confirmed");
 
 let running = false;
@@ -80,7 +78,12 @@ async function main() {
 
   console.log(`Slipstream control console on ${server.url}`);
   console.log(`  GET  /preflight       → payer balance check`);
-  console.log(`  POST /campaign/start  → launch { bundles, faults }`);
+  console.log(`  POST /campaign/start  → launch { bundles, faults } (needs x-control-token)`);
+  console.log(
+    config.controlToken
+      ? `  campaign launches PROTECTED by CONTROL_TOKEN ✓`
+      : `  ⚠ CONTROL_TOKEN unset — /campaign/start is DISABLED (set it to enable launches)`
+  );
   console.log(`payer: ${payer.publicKey.toBase58()}`);
   console.log(`open the dashboard:  cd dashboard && npm run dev  →  http://localhost:3000/?live`);
 }

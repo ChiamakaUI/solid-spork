@@ -67,17 +67,29 @@ export function ControlPanel({ s }: { s: DashState }) {
   };
 
   const start = async () => {
+    // The launch route is token-protected; the operator enters the token once and
+    // it's kept in localStorage — never in the bundle, so the hosted page is safe.
+    let token = localStorage.getItem("slipstream_control_token") ?? "";
+    if (!token) {
+      token = window.prompt("Control token (CONTROL_TOKEN set on the server):")?.trim() ?? "";
+      if (!token) return;
+      localStorage.setItem("slipstream_control_token", token);
+    }
     setBusy(true);
     setMsg(null);
     try {
       const r = await fetch(`${LIVE_BASE}/campaign/start`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-control-token": token },
         body: JSON.stringify({ bundles, faults }),
       });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
       if (r.status === 202) setMsg(`launched ${d.bundles} bundles${d.faults ? `, ${d.faults} fault-injected` : ""}…`);
       else if (r.status === 409) setMsg("a campaign is already running");
+      else if (r.status === 401) {
+        localStorage.removeItem("slipstream_control_token");
+        setMsg("invalid control token — click Start to re-enter");
+      } else if (r.status === 503) setMsg("launches disabled on server (CONTROL_TOKEN unset)");
       else {
         setMsg(d.error ?? `error ${r.status}`);
         if (d.address) setPf(d); // 400 low-balance carries the preflight
